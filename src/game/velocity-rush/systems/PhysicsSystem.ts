@@ -37,12 +37,3 @@ export const applyHorizontalWrap = <T extends Position>(state: T, viewportWidth:
   return state;
 };
 
-/** Integrate position by velocity for a frame. dt in seconds. */
-export const integratePosition = <T extends { x: number; y: number; vx: number; vy: number }>(
-  state: T,
-  dt: number,
-): T => ({
-  ...state,
-  x: state.x + state.vx * dt,
-  y: state.y + state.vy * dt,
-});

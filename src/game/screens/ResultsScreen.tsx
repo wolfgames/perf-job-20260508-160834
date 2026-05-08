@@ -60,7 +60,7 @@ export function ResultsScreen() {
         fallback={
           // Try Again branch — no "Game Over" language
           <div class="flex flex-col items-center gap-6 w-full max-w-sm">
-            <h1 class="text-3xl font-bold text-white">Try Again</h1>
+            <h1 class="text-3xl font-bold text-white">Try Again?</h1>
 
             <div class="text-center">
               <p class="text-white/50 text-sm mb-1">Height Reached</p>

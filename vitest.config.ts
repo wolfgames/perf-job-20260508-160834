@@ -8,6 +8,11 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    exclude: [
+      // These tests use bun:test (not vitest) and must be run with `bun test`
+      "tests/unit/scripts/**",
+      "tests/unit/lint/**",
+    ],
     globals: false,
   },
   resolve: {

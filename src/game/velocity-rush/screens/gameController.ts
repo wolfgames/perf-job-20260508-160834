@@ -16,11 +16,11 @@ import { createSignal } from 'solid-js';
 import type { GameControllerDeps, GameController, SetupGame } from '~/game/mygame-contract';
 import { HudRenderer } from '~/game/velocity-rush/renderers/HudRenderer';
 import {
-  createBoardState,
   createVelocityRushState,
   applyTap,
   applyFall,
   applyLand,
+  applyLeavePlatformEdge,
   applyWin,
   applyTimerTick,
   type VelocityRushState,
@@ -109,7 +109,7 @@ export const setupGame: SetupGame = (deps: GameControllerDeps): GameController =
     gameState.setHeightReached(rushState.heightReached);
     gameState.setElapsedTimeMs(rushState.elapsedTimeMs);
     gameState.setAvgFrameTimeMs(avgFrameTime());
-    (deps as typeof deps & { goto?: (s: string) => void }).goto?.('results');
+    deps.goto('results');
   };
 
   return {
@@ -238,7 +238,18 @@ export const setupGame: SetupGame = (deps: GameControllerDeps): GameController =
                 onPlatform = p;
               } else if (board.phase === 'Airborne' && runnerPos.vy > 0 && hitsUnderside(rBody, adjPlatform)) {
                 runnerPos = { ...runnerPos, vy: 0 };
+              } else if (board.phase === 'Idle') {
+                // Check if runner is still standing on any platform
+                const rBodyIdle = { x: runnerPos.x, y: runnerPos.y, width: 1, height: 2, vy: -0.01 };
+                if (landedOnTop(rBodyIdle, adjPlatform)) {
+                  onPlatform = p;
+                }
               }
+            }
+
+            // Idle → CoyoteWindow: runner walked off a platform edge
+            if (rushState.board.phase === 'Idle' && onPlatform === null) {
+              rushState = { ...rushState, board: applyLeavePlatformEdge(rushState.board) };
             }
 
             // Moving platform carry
@@ -326,7 +337,13 @@ export const setupGame: SetupGame = (deps: GameControllerDeps): GameController =
     },
 
     destroy() {
-      gsap.killTweensOf(runnerRenderer?.container.scale ?? {});
+      if (runnerRenderer?.container) {
+        gsap.killTweensOf(runnerRenderer.container);
+        gsap.killTweensOf(runnerRenderer.container.scale);
+      }
+      for (const r of platformRenderers) {
+        gsap.killTweensOf(r.container);
+      }
       tapCleanup?.();
       tickerCleanup?.();
       for (const r of platformRenderers) r.destroy();

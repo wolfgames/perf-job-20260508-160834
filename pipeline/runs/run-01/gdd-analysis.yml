@@ -1,0 +1,618 @@
+# gdd-analysis.yml — Structured feature delta
+# Written by phase 20 (analyze). Read by plan, implement, player-flow, stabilize.
+
+game: "Velocity Rush"
+counts:
+  exists: 0
+  partial: 2
+  new: 13
+  conflict: 0
+  content_gap: 5
+conflict_breakdown:
+  reuse: 0
+  adapt: 0
+  replace: 0
+high_risk: 3
+open_questions: 2
+
+features:
+
+  # -------------------------------------------------------------------------
+  # CONTENT-GAP features — scaffold infrastructure exists but content does not
+  # match GDD intent.
+  # -------------------------------------------------------------------------
+
+  - id: loading-screen
+    name: "Loading Screen — minimal progress bar on white"
+    status: content-gap
+    lifecycle_phase: BOOT
+    risk: LOW
+    complexity: low
+    cos_required: []
+    ux_zones:
+      thumb_zone: out-of-reach
+      touch_targets: []
+      feedback_surfaces: [progress-bar]
+    affected_files:
+      - src/game/screens/LoadingScreen.tsx
+    dependencies: []
+    ux:
+      discovery: "Passive — player waits; no interaction required"
+      feedback: "Centered progress bar advances as asset bundle loads"
+      onboarding: "N/A — no player action"
+    notes: >
+      Scaffold LoadingScreen exists and handles bundle loading. GDD requires
+      white background, no animation, no branding — purely functional.
+      Current scaffold may show branding logo; must be stripped to white + progress bar.
+
+  - id: start-screen
+    name: "Start Screen — Velocity Rush title, level seed, perf badge, Play button"
+    status: content-gap
+    lifecycle_phase: TITLE
+    risk: MEDIUM
+    complexity: low
+    cos_required: []
+    ux_zones:
+      thumb_zone: center
+      touch_targets: [play-button]
+      feedback_surfaces: [play-button, level-indicator]
+    affected_files:
+      - <game-root>/screens/startView.ts
+      - src/game/screens/StartScreen.tsx
+    dependencies: [game-state-signals]
+    ux:
+      discovery: "Play button occupies center-bottom thumb zone; large, single CTA"
+      feedback: "Button responds to press within 100 ms; transitions to gameplay screen"
+      onboarding: >
+        Level seed number shown at start so player knows which level they are on.
+        Perf mode badge communicates the benchmark nature of the game.
+    notes: >
+      Current startView.ts DOM stub shows generic 'Start Screen' title and Play button.
+      GDD requires: game title 'Velocity Rush', current level number indicator,
+      large Play button (min 44×44 pt), small 'perf mode' badge.
+      Level seed must be read from game state (current seed / level number).
+      Play button must call initGpu() + unlockAudio() + loadBundle('scene-perf') before
+      transitioning — level generation should begin during screen fade.
+
+  - id: results-screen
+    name: "Results Screen — Level Complete and Try Again branches"
+    status: content-gap
+    lifecycle_phase: OUTCOME
+    risk: MEDIUM
+    complexity: med
+    cos_required: []
+    ux_zones:
+      thumb_zone: center
+      touch_targets: [play-again-button, next-level-button, try-again-button]
+      feedback_surfaces: [metrics-display, heading]
+    affected_files:
+      - src/game/screens/ResultsScreen.tsx
+      - <game-root>/screens/startView.ts
+    dependencies: [game-state-signals, win-sequence, loss-sequence]
+    ux:
+      discovery: >
+        Two distinct branches: Level Complete (success) shows height/time/frame-time
+        + two CTAs ('Play Again' same seed, 'Next Level' seed+1);
+        Try Again (failure) shows height-reached + single large 'Try Again' CTA.
+      feedback: >
+        Metrics populated before screen appears. Buttons in thumb zone.
+        No 'Game Over' language on failure — gentle, encouraging retry.
+      onboarding: >
+        Performance metrics (avg frame time) serve as the benchmark readout;
+        their presence is self-explanatory for a perf-testing context.
+    notes: >
+      Current ResultsScreen.tsx shows static 'Game Over' heading and reads only
+      gameState.score(). GDD requires two screen branches sharing the 'results'
+      screen ID (win vs loss), different headings, metrics display, and two
+      different CTA sets. 'Game Over' heading must be replaced — GDD says no
+      'Game Over' language. Metrics (height, time, avg frame time) require new
+      signals in game state. The scaffold 'results' screen ID is valid and must
+      be retained.
+
+  - id: game-controller-gpu
+    name: "GameController — GPU Pixi integration replacing DOM stub"
+    status: content-gap
+    lifecycle_phase: PLAY
+    risk: HIGH
+    complexity: high
+    cos_required: [core-interaction, canvas, animated-dynamics]
+    ux_zones:
+      thumb_zone: center
+      touch_targets: [full-screen-tap-target]
+      feedback_surfaces: [canvas, runner, platforms, hud]
+    affected_files:
+      - <game-root>/screens/gameController.ts
+    dependencies:
+      - runner-entity
+      - physics-system
+      - platform-static
+      - platform-moving
+      - platform-crumbling
+      - platform-exit
+      - camera-system
+      - hud-strip
+      - board-state-machine
+      - procedural-level-gen
+    ux:
+      discovery: "Full-screen tap target — player taps anywhere to jump"
+      feedback: "Runner jump animation + landing squash within 1 frame (16 ms)"
+      onboarding: >
+        Mechanic teaches itself: runner auto-drifts horizontally, camera scrolls,
+        platforms visible above. First tap produces visible jump — aha moment
+        delivered through play, not tutorial text.
+    notes: >
+      Current gameController.ts is a DOM stub (creates a div with 'Gameplay Screen' text).
+      GDD requires full GPU Pixi game with runner physics, platform types, camera scroll,
+      HUD, and all game logic. This is the central integration point — all other
+      game features wire through here. Must replace DOM stub with Pixi Application init,
+      ECS setup, renderer wiring, and input routing.
+      Risk: HIGH — touches GameController, viewport layout, renderer, ECS lifecycle.
+
+  - id: asset-manifest-scene-perf
+    name: "Asset manifest — scene-perf GPU bundle"
+    status: content-gap
+    lifecycle_phase: BOOT
+    risk: LOW
+    complexity: low
+    cos_required: [canvas]
+    ux_zones:
+      thumb_zone: out-of-reach
+      touch_targets: []
+      feedback_surfaces: []
+    affected_files:
+      - src/game/asset-manifest.ts
+    dependencies: []
+    ux:
+      discovery: "N/A — infrastructure"
+      feedback: "N/A"
+      onboarding: "N/A"
+    notes: >
+      GDD names a single asset bundle 'scene-perf'. Current manifest has only
+      theme-branding (DOM). Must add a scene-* prefixed bundle so Pixi can
+      access game assets. Bundle name 'scene-perf' uses correct prefix for GPU loader.
+
+  # -------------------------------------------------------------------------
+  # PARTIAL features — partially implemented; gaps identified
+  # -------------------------------------------------------------------------
+
+  - id: game-state-signals
+    name: "Game State Signals — height, time, frameTime, seed, levelNumber"
+    status: partial
+    risk: LOW
+    complexity: low
+    cos_required: []
+    ux_zones:
+      thumb_zone: out-of-reach
+      touch_targets: []
+      feedback_surfaces: [hud, results-screen]
+    affected_files:
+      - src/game/state.ts
+    dependencies: []
+    ux:
+      discovery: "N/A — infrastructure"
+      feedback: "Signals feed HUD (height, time) and results screen (metrics)"
+      onboarding: "N/A"
+    notes: >
+      src/game/state.ts has score + level signals. GDD requires additional signals:
+      heightReached (for HUD + results), elapsedTime (for HUD + results),
+      avgFrameTime (for results only), currentSeed (for start screen display + retry),
+      levelNumber (already present as 'level'). Score signal is present but GDD
+      has pass/fail only — score is unused as a player-facing metric. Signal kept
+      for compatibility but may be repurposed or left dormant.
+
+  - id: screen-shell-wiring
+    name: "Screen shell wiring — 4 screen IDs already wired"
+    status: partial
+    lifecycle_phase: BOOT
+    risk: LOW
+    complexity: low
+    cos_required: []
+    ux_zones:
+      thumb_zone: out-of-reach
+      touch_targets: []
+      feedback_surfaces: []
+    affected_files:
+      - src/game/config.ts
+      - src/game/screens/GameScreen.tsx
+    dependencies: []
+    ux:
+      discovery: "N/A — infrastructure"
+      feedback: "N/A"
+      onboarding: "N/A"
+    notes: >
+      config.ts wires all 4 valid screen IDs (loading, start, game, results).
+      GameScreen.tsx has PauseOverlay and Logo DOM overlay in place.
+      Partial because GameScreen.tsx needs no changes; ResultsScreen is a content-gap
+      (tracked separately). Screen wiring itself is complete — marking partial
+      because ResultsScreen content is mismatched (covered by results-screen feature).
+
+  # -------------------------------------------------------------------------
+  # NEW features — must be built from scratch
+  # -------------------------------------------------------------------------
+
+  - id: runner-entity
+    name: "Runner Entity — visual rectangle, horizontal drift, wrap, state"
+    status: new
+    risk: MEDIUM
+    complexity: med
+    cos_required: [core-interaction, animated-dynamics, canvas]
+    ux_zones:
+      thumb_zone: center
+      touch_targets: []
+      feedback_surfaces: [canvas, runner-sprite]
+    affected_files:
+      - <game-root>/entities/Runner.ts
+      - <game-root>/renderers/RunnerRenderer.ts
+    dependencies: [physics-system, board-state-machine]
+    ux:
+      discovery: "Runner is visually prominent (dark charcoal 1×2 rect) against white void"
+      feedback: "Jump stretch animation on tap; squash/settle on landing"
+      onboarding: "Runner auto-drifts horizontally — player immediately sees motion and taps"
+    notes: >
+      Dark charcoal 1×2 unit rectangle. Automatic horizontal drift (slight
+      left-right oscillation, seeded per level). Wraps at viewport edges.
+      Jump stretch and landing squash driven by GSAP. State machine transitions:
+      Grounded → Airborne → (CoyoteWindow) → Grounded / Lost.
+
+  - id: physics-system
+    name: "Physics System — gravity, jump impulse, terminal velocity, coyote time, platform carry"
+    status: new
+    risk: HIGH
+    complexity: high
+    cos_required: [core-interaction, animated-dynamics]
+    ux_zones:
+      thumb_zone: center
+      touch_targets: []
+      feedback_surfaces: [canvas, runner-sprite]
+    affected_files:
+      - <game-root>/systems/PhysicsSystem.ts
+      - <game-root>/state/PhysicsPlugin.ts
+    dependencies: [runner-entity, board-state-machine]
+    ux:
+      discovery: "Physics manifest immediately on first tap — runner jumps and falls"
+      feedback: "Every tap produces instant jump response; gravity makes falling feel physical"
+      onboarding: "Physics teaches itself: gravity is the teacher, platforms are the lesson"
+    notes: >
+      Core rules from GDD (all in game units / ms):
+        - Jump impulse: +14 units/s upward, instantaneous.
+        - Gravity: -28 units/s² per frame when airborne.
+        - Terminal velocity: -20 units/s downward (clamp).
+        - Landing: vertical velocity → 0, state → Grounded within 1 frame (16 ms).
+        - Coyote time: 120 ms window after leaving edge allows jump.
+        - Moving platform carry: runner.x offset by platform.delta each frame.
+        - Horizontal wrap: runner.x > viewportRight → runner.x = 0; vice versa.
+        - Underside hit: vertical velocity → 0, runner begins falling.
+        - Failure: runner.y < viewportBottom → trigger Lost state.
+      Must use seeded RNG for horizontal drift; no Math.random().
+      Risk: HIGH — central physics loop, cross-cutting impact on all game entities.
+
+  - id: platform-static
+    name: "Static Platform — immovable, one-way collision"
+    status: new
+    risk: MEDIUM
+    complexity: low
+    cos_required: [canvas, animated-dynamics]
+    ux_zones:
+      thumb_zone: center
+      touch_targets: []
+      feedback_surfaces: [canvas, platform-sprite]
+    affected_files:
+      - <game-root>/entities/Platform.ts
+      - <game-root>/renderers/PlatformRenderer.ts
+    dependencies: [physics-system]
+    ux:
+      discovery: "Mid-grey rectangle clearly distinct from white void background"
+      feedback: "Runner lands with squash animation; collision clearly registered"
+      onboarding: "First platform (spawn) is wide, hard to miss — successful first landing guaranteed"
+    notes: >
+      Solid mid-grey rectangle, 2–6 units wide, 0.5 units tall.
+      One-way collision: runner lands on top, passes through from below.
+      Underside hit zeros vertical velocity.
+      First platform always width 4, centered, y=2 from bottom — never randomized.
+
+  - id: platform-moving
+    name: "Moving Platform — horizontal oscillation, carries runner"
+    status: new
+    risk: MEDIUM
+    complexity: med
+    cos_required: [canvas, animated-dynamics]
+    ux_zones:
+      thumb_zone: center
+      touch_targets: []
+      feedback_surfaces: [canvas, platform-sprite]
+    affected_files:
+      - <game-root>/entities/Platform.ts
+      - <game-root>/renderers/PlatformRenderer.ts
+    dependencies: [platform-static, physics-system]
+    ux:
+      discovery: "Lighter grey tint differentiates from static platforms; motion is immediate visual cue"
+      feedback: "Runner visibly carried with platform; wrap applied if platform pushes runner to edge"
+      onboarding: "Moving platforms introduced at level 4+ (movingRatio > 0); player has time to learn static first"
+    notes: >
+      Same visual as static platform, tinted slightly lighter grey.
+      Oscillates horizontally between two lane boundaries at 1–2 units/s.
+      Platform delta added to runner.x each frame while runner is grounded on it.
+      If platform pushes runner to viewport edge, horizontal wrap applies normally.
+
+  - id: platform-crumbling
+    name: "Crumbling Platform — timed dissolution after contact"
+    status: new
+    risk: MEDIUM
+    complexity: med
+    cos_required: [canvas, animated-dynamics]
+    ux_zones:
+      thumb_zone: center
+      touch_targets: []
+      feedback_surfaces: [canvas, platform-sprite]
+    affected_files:
+      - <game-root>/entities/Platform.ts
+      - <game-root>/renderers/PlatformRenderer.ts
+    dependencies: [platform-static, physics-system]
+    ux:
+      discovery: "Dashed-outline overlay provides clear visual affordance — 'this one crumbles'"
+      feedback: "0.3s shake animation before disappearing gives player a visible warning window"
+      onboarding: "Crumbling platforms introduced at level 7+ — player has learned static and moving first"
+    notes: >
+      Dashed-outline overlay on rectangle. On first contact: 0.4s timer starts.
+      After 0.4s: 0.3s shake animation (GSAP), then platform disappears.
+      No collision after crumble. Runner jumping before crumble completes does not
+      reset crumble timer. No two consecutive platforms may both be crumbling.
+
+  - id: platform-exit
+    name: "Exit Platform — accent-colored, win trigger"
+    status: new
+    risk: MEDIUM
+    complexity: low
+    cos_required: [canvas, core-interaction]
+    ux_zones:
+      thumb_zone: out-of-reach
+      touch_targets: []
+      feedback_surfaces: [canvas, platform-sprite]
+    affected_files:
+      - <game-root>/entities/Platform.ts
+      - <game-root>/renderers/PlatformRenderer.ts
+    dependencies: [platform-static, board-state-machine, win-sequence]
+    ux:
+      discovery: "Bright accent color + upward-pointing arrow icon — unmistakably different from other platforms"
+      feedback: "Highlight pulse animation on win trigger; runner victory bounce"
+      onboarding: "Exit is visible above; camera scrolls toward it naturally"
+    notes: >
+      Static platform, width 3, filled with bright accent color (single color per
+      level seed). Centered arrow icon on surface.
+      Win trigger: runner grounded on exit for >= 0.3s → win state.
+      Accent color is seeded (derived from level seed, not Math.random()).
+
+  - id: procedural-level-gen
+    name: "Procedural Level Generation — seeded PRNG, difficulty params, layout, solvability"
+    status: new
+    risk: HIGH
+    complexity: high
+    cos_required: [core-interaction]
+    ux_zones:
+      thumb_zone: out-of-reach
+      touch_targets: []
+      feedback_surfaces: []
+    affected_files:
+      - <game-root>/generation/LevelGenerator.ts
+      - <game-root>/generation/SolvabilityChecker.ts
+      - <game-root>/generation/rng.ts
+      - tests/generation/level-generator.test.ts
+    dependencies: [platform-static, platform-moving, platform-crumbling, platform-exit, physics-system]
+    ux:
+      discovery: "N/A — invisible infrastructure"
+      feedback: "Same seed always produces identical level — reproducibility is a feature"
+      onboarding: "N/A — transparent to player"
+    notes: >
+      Seed formula: levelNumber × 99991.
+      Difficulty parameters scale with levelNumber (platformCount, movingRatio,
+      crumblingRatio, platformWidthRange, gapRange, cameraSpeed).
+      No moving platforms before level 4; no crumbling before level 7.
+      Solvability check: simulate runner path, reject on GAP_TOO_WIDE,
+      RISE_TOO_HIGH, CONSECUTIVE_CRUMBLING, NO_EXIT.
+      Retry logic: up to 10 retries (seed+1 each time), then safe-mode fallback
+      (static platforms only, fixed width/gap/rise, always solvable).
+      Generation must complete in < 16 ms (perf benchmark constraint).
+      Math.random() is forbidden — all randomness through seeded PRNG.
+      Risk: HIGH — cross-cutting, touches platform layout, physics validation,
+      seed state management.
+
+  - id: camera-system
+    name: "Camera System — auto-scroll upward, dead zone tracking, freeze on end"
+    status: new
+    risk: HIGH
+    complexity: med
+    cos_required: [animated-dynamics]
+    ux_zones:
+      thumb_zone: out-of-reach
+      touch_targets: []
+      feedback_surfaces: [canvas]
+    affected_files:
+      - <game-root>/systems/CameraSystem.ts
+    dependencies: [runner-entity, board-state-machine, procedural-level-gen]
+    ux:
+      discovery: "Camera scrolls automatically — player immediately understands upward progression"
+      feedback: "Camera freeze on win/loss is the first signal that a phase change happened"
+      onboarding: "Auto-scroll creates urgency; dead zone gives player room to navigate"
+    notes: >
+      Camera scrolls upward at cameraSpeed (0.8 + levelNumber × 0.02 units/s,
+      max 2 units/s). Tracks runner's vertical position with a dead zone.
+      Freezes on Won and Lost states. Drives height meter (distance scrolled).
+      Risk: HIGH — viewport layout, interacts with all renderer positioning.
+
+  - id: hud-strip
+    name: "HUD Strip — height meter + elapsed time, 80pt top band"
+    status: new
+    risk: MEDIUM
+    complexity: low
+    cos_required: []
+    ux_zones:
+      thumb_zone: out-of-reach
+      touch_targets: []
+      feedback_surfaces: [hud]
+    affected_files:
+      - <game-root>/renderers/HudRenderer.ts
+    dependencies: [camera-system, game-state-signals]
+    ux:
+      discovery: "Top strip is a passive readout — glanceable, not interactive"
+      feedback: "Height and time update every frame; player can track progress at a glance"
+      onboarding: >
+        Height meter immediately communicates that upward movement = progress.
+        Elapsed time communicates session target (1–3 min).
+    notes: >
+      80pt tall strip at top of viewport. Contains height meter (units climbed)
+      and elapsed time (mm:ss). Play area occupies remaining viewport height below.
+      GPU Pixi text/graphics — no DOM inside game layer (guardrail #1).
+
+  - id: board-state-machine
+    name: "Board State Machine — Idle/Airborne/CoyoteWindow/Animating/Won/Lost/Paused"
+    status: new
+    risk: MEDIUM
+    complexity: med
+    cos_required: [core-interaction, animated-dynamics]
+    ux_zones:
+      thumb_zone: out-of-reach
+      touch_targets: []
+      feedback_surfaces: []
+    affected_files:
+      - <game-root>/state/BoardPlugin.ts
+    dependencies: []
+    ux:
+      discovery: "N/A — internal state; player perceives state changes through animations"
+      feedback: "State transitions drive all game responses (jump allowed, input blocked, etc.)"
+      onboarding: "N/A"
+    notes: >
+      States: Idle, Airborne, CoyoteWindow, Animating, Won, Lost, Paused.
+      Idle → Airborne on tap (jump impulse).
+      Airborne → Grounded on platform landing.
+      CoyoteWindow: 120ms after leaving edge; tap still allowed.
+      Animating: crumble/squash/stretch playing — input queued, not blocked.
+      Won/Lost: no input allowed. Paused: system-level, no input.
+      All state transitions that produce visible changes must be animated (GSAP).
+
+  - id: win-sequence
+    name: "Win Sequence — exit pulse, victory bounce, metrics capture, transition"
+    status: new
+    lifecycle_phase: OUTCOME
+    risk: MEDIUM
+    complexity: low
+    cos_required: [animated-dynamics]
+    ux_zones:
+      thumb_zone: out-of-reach
+      touch_targets: []
+      feedback_surfaces: [canvas, platform-sprite]
+    affected_files:
+      - <game-root>/sequences/WinSequence.ts
+    dependencies: [board-state-machine, camera-system, game-state-signals, platform-exit]
+    ux:
+      discovery: "Exit pulse + runner bounce are the player's reward for reaching the goal"
+      feedback: "Staggered animations (400 ms pulse + 300 ms bounce = 700 ms total) feel earned"
+      onboarding: "N/A — end-state sequence"
+    notes: >
+      Ordered: set Won state → freeze camera → exit platform highlight pulse (GSAP, 400 ms)
+      → runner victory bounce (GSAP, 300 ms) → wait 700 ms total → capture metrics
+      (height, time, avg frame time) → fade out 300 ms → populate Level Complete screen.
+
+  - id: loss-sequence
+    name: "Loss Sequence — brief pause, transition, height display"
+    status: new
+    lifecycle_phase: OUTCOME
+    risk: LOW
+    complexity: low
+    cos_required: [animated-dynamics]
+    ux_zones:
+      thumb_zone: out-of-reach
+      touch_targets: []
+      feedback_surfaces: [canvas]
+    affected_files:
+      - <game-root>/sequences/LossSequence.ts
+    dependencies: [board-state-machine, camera-system, game-state-signals]
+    ux:
+      discovery: "Runner falls below viewport — gravity is the loss feedback"
+      feedback: "400 ms pause lets player register failure; 200 ms fade is gentle"
+      onboarding: "N/A — end-state sequence"
+    notes: >
+      Ordered: set Lost state → runner falls (no intervention animation) → freeze camera
+      → wait 400 ms → fade out 200 ms → populate Try Again screen with height-reached.
+
+conflicts: []
+
+risk_areas:
+  - feature: game-controller-gpu
+    reason: >
+      Central integration point. Replaces DOM stub with full Pixi Application + ECS + all
+      renderers. Touches GameController contract, viewport layout, ECS lifecycle,
+      and every downstream feature. Must be built before any renderer can be tested.
+
+  - feature: physics-system
+    reason: >
+      Cross-cutting loop: gravity + jump + coyote time + platform carry + wrap affect
+      every other game entity. If physics constants drift from GDD spec, solvability
+      checker may reject levels that were designed to be reachable.
+
+  - feature: procedural-level-gen
+    reason: >
+      Generation must complete in < 16 ms (explicit GDD perf constraint). Solvability
+      simulation uses the same physics constants as the runtime — divergence between
+      generation-time simulation and runtime physics will produce unsolvable levels
+      that pass the solvability check. Seed reproducibility requires deterministic
+      PRNG across engine versions.
+
+  - feature: camera-system
+    reason: >
+      Viewport layout authority. Feeds HUD strip positioning, platform scroll speed,
+      and height-meter value. Incorrect dead zone breaks playability (runner scrolls
+      off-screen before player can react).
+
+open_questions:
+  - id: q-scoring-cos
+    question: >
+      GDD specifies pass/fail only — no score, no leaderboard striation. The scoring
+      CoS (gated at core pass) requires at least 2 multiplicative dimensions and a
+      chain multiplier. Velocity Rush has no combo or chain mechanics. How should
+      the scoring CoS be satisfied or waived for this game?
+    context: >
+      GDD 'At a Glance' table: 'Star Rating: None — pass/fail only'.
+      GDD 'Level Complete Screen' shows height, time, avg frame time — not a score.
+      The scoring CoS exit criteria require 'at least 2 multiplicative dimensions'
+      and 'chain/cascade depth multiplies the score' — neither concept maps to a
+      single-input platformer. Options: (a) derive a time-based performance score
+      from height × (1/time) × frame-efficiency for leaderboard potential;
+      (b) treat scoring CoS as not-applicable for this perf-benchmark archetype.
+      Plan must resolve before implement.
+
+  - id: q-audio-scope
+    question: >
+      GDD does not mention audio (no SFX, no music, no audio bundle). Should an
+      audio-sfx bundle and audio unlock be included or explicitly omitted?
+    context: >
+      Scaffold start screen already calls loadAudio() with a silent catch.
+      mobile-constraints.mdc rule requires unlockAudio() on first user tap.
+      GDD is silent on audio — this is a gap, not a stated omission.
+      If audio is omitted entirely, guardrail #15 (no stubs/placeholders) means
+      the audio load in startView.ts should be removed rather than left as a
+      no-op stub. Plan must decide.
+
+warnings:
+  - >
+    collision:hud-reserved-top — gdd=80pt HUD strip at top of viewport vs
+    skill=reserved_top_px=0 (pipeline-context.yml prime.carry_forward) — soft.
+    GDD pins an exact 80pt value for the HUD height; prime detected reserved_top_px=0
+    (no pre-reserved space). Plan must set reserved_top_px=80 (or logical-unit
+    equivalent) to allocate the HUD band and pass the value to renderers.
+    allow-gdd-overrides=false means skill wins by default, but 80pt is a GDD-specified
+    layout dimension — if plan drops it, the HUD has no reserved space.
+    Classified soft: touch-target floor is not at stake; this is a viewport-gap value.
+
+  - >
+    collision:results-screen-heading — gdd="Try Again?" (no 'Game Over' language) vs
+    scaffold=ResultsScreen.tsx heading 'Game Over' (src/game/screens/ResultsScreen.tsx:9)
+    — soft. GDD explicitly states no 'Game Over' language on the failure branch.
+    Current scaffold uses 'Game Over'. Plan must rename to 'Try Again?' on failure
+    branch. Classified soft: wording/tone is reskinnable.
+
+  - >
+    collision:scoring-cos — gdd=pass/fail only (no score, no leaderboard) vs
+    cos=scoring CoS gated at core pass requires multiplicative score dimensions
+    (references/conditions/scoring.md) — soft. GDD archetype (perf benchmark
+    platformer) does not fit the scoring CoS model. Open question q-scoring-cos
+    captures the resolution options. Plan must decide before implement.

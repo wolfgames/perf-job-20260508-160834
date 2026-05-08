@@ -1,0 +1,40 @@
+run: "01"
+pipeline_version: "0.3.13"
+pass: core
+started: "2026-05-08T16:08:34Z"
+finished: "2026-05-08T18:42:17Z"
+status: partial
+config:
+  gdd_gate: auto-handoff
+  think_only: false
+  trace: false
+  skip_groups: []
+  allow_skip_pass: false
+phases:
+  - id: pass-gate
+    status: complete
+    summary: "core is the first gated pass — no N-1 check required; gate passed"
+  - id: prime
+    status: complete
+    summary: "Velocity Rush; pixi+solidjs+gsap+bun; greenfield game stub; buildCmd=bun run build; testCmd=bun run test"
+  - id: analyze
+    status: complete
+    summary: "20 features (13 new, 2 partial, 5 content-gap); 3 high-risk areas; 2 open questions"
+  - id: plan
+    status: complete
+    summary: "3 batches, 28 new files, 5 modified; resolved 2 open questions; viewport budget derived"
+  - id: implement
+    status: complete
+    summary: "3/3 batches complete; 22 new files, 6 modified; 43 tests added; 6 issues found and fixed"
+  - id: integrate
+    status: complete
+    summary: "1 orphan wired (applyLeavePlatformEdge); 2 dead exports cleaned; fallbacks unified"
+  - id: player-flow
+    status: complete
+    summary: "7 transitions checked; 3 issues found, 2 fixed; fun test pass"
+  - id: verify
+    status: complete
+    summary: "build pass (0 errors); 184/184 tests passing; 1 fix cycle; all guardrails clean"
+  - id: stabilize
+    status: complete
+    summary: "206/206 tests passing (+22 edge-case tests); cos_failed=[]; completeness_gaps=3 (partial cos + mobile unverified); pipeline_status=partial"

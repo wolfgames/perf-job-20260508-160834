@@ -33,7 +33,10 @@ describe('velocity-rush: level-generator', () => {
       });
   });
 
-  it('generation completes in < 16ms for level 1 through level 10', () => {
+  it('generation completes in < 16ms for level 1 through level 10 (after JIT warmup)', () => {
+    // Warm up JIT to avoid cold-start overhead on the first measured call
+    for (let i = 0; i < 3; i++) generateLevel(1);
+
     for (const level of [1, 2, 3, 4, 5, 7, 10]) {
       const start = performance.now();
       generateLevel(level);

@@ -1,0 +1,538 @@
+# implementation-plan.yml — Structured batch execution plan
+# Written by phase 30 (plan). Read by implement, integrate, player-flow, stabilize.
+
+game: "Velocity Rush"
+gdd_type: "additive"
+total_batches: 3
+total_features: 20
+new_files: 28
+modified_files: 5
+
+viewport_budget:
+  default:
+    hud_top: 80
+    play_area: 700
+    reserved_bottom: 64
+    logo_overlay: 32
+    viewport_total: 844
+    viewport_width: 390
+    dom_reserved_top: 80
+    dom_reserved_bottom: 64
+    source: greenfield_defaults
+    notes: >
+      HUD strip = 80pt (GDD-specified, feature hud-strip).
+      Reserved bottom = 64pt (prime.carry_forward.reserved_bottom_px — WolfGames logo).
+      Play canvas = 844 - 80 - 64 = 700pt tall × 390pt wide.
+      Computed from GDD constants + scaffold prime values. No existing layout code to measure.
+
+resolved_questions:
+  - question: "q-scoring-cos: GDD specifies pass/fail only — how to satisfy scoring CoS requiring 2 multiplicative dimensions?"
+    decision: >
+      Derive a perf-score from three multiplicative dimensions:
+      heightReached × speedFactor × frameFactor.
+      speedFactor = 1000 / elapsedTimeMs (higher score for faster runs).
+      frameFactor = TARGET_FRAME_TIME / avgFrameTime where TARGET_FRAME_TIME = 16.67 ms
+      (higher score for smoother frame pacing).
+      Formula: perfScore = Math.round(heightReached * (1000 / elapsedTimeMs) * (TARGET_FRAME_TIME / avgFrameTime)).
+      This satisfies scoring CoS base: 3 multiplicative dimensions (height × speed × frame-efficiency).
+      perfScore is computed at level end and displayed on results screen.
+      It also makes the "benchmark" framing concrete — frame-efficiency is a first-class scoring dimension.
+    rationale: >
+      Scoring CoS is gated at core pass and requires at least 2 multiplicative dimensions.
+      The perf-score formula fits the GDD's benchmark archetype and uses only metrics already
+      required by the GDD (height, time, avgFrameTime). No new game mechanics needed.
+      A skilled player (fast run, smooth frames) scores dramatically more than a slow one.
+
+  - question: "q-audio-scope: GDD is silent on audio — include or explicitly omit?"
+    decision: >
+      Audio is explicitly omitted from this pass.
+      The loadAudio() stub in startView.ts is removed (not left as a no-op).
+      The deps.unlockAudio() call is retained on Play button tap — it is a mobile-constraints
+      best practice with zero audio loaded, not a stub.
+      No audio-* bundle added to the manifest.
+      Rationale: Guardrail #15 prohibits stubs/no-ops. GDD specifies no audio content.
+      Audio can be added in a future pass when content exists.
+    rationale: >
+      GDD explicitly has no audio section. Adding a silent loadAudio stub violates guardrail #15.
+      Removing it keeps the start screen clean. unlockAudio() is retained for mobile compliance;
+      it fires safely even with no audio registered.
+
+preserve_list: []
+
+batches:
+
+  # ===========================================================================
+  # BATCH 1 — P0 — Core Physics Loop (Hook Batch)
+  # "Player can tap to jump and see the runner fall under gravity"
+  # ===========================================================================
+
+  - id: 1
+    name: "Core Physics Loop — runner, gravity, tap-to-jump, camera, loss"
+    priority: P0
+    player_visible: >
+      Player sees a white canvas with a dark charcoal rectangle drifting horizontally.
+      Camera scrolls upward. Tap anywhere: runner leaps upward with stretch animation.
+      Gravity pulls runner back down. Runner falls below viewport: loss state, game ends.
+      First tap produces visible jump — aha moment through play.
+    features:
+      - board-state-machine
+      - game-state-signals
+      - asset-manifest-scene-perf
+      - physics-system
+      - runner-entity
+      - camera-system
+      - game-controller-gpu
+    cos_covered: [core-interaction, animated-dynamics, canvas]
+    ux_zones:
+      thumb_zone: [center, full-screen-tap]
+      touch_targets: [full-screen-tap-target]
+      feedback_surfaces: [canvas, runner-sprite, hud-placeholder]
+    acceptance:
+      # board-state-machine
+      - given: "game has just initialized"
+        should: "board state is Idle; no input has been processed"
+      - given: "player taps the screen while state is Idle"
+        should: "state transitions to Airborne and jump impulse fires (+14 units/s vertical)"
+      - given: "state is Airborne and runner falls below viewport bottom"
+        should: "state transitions to Lost and game-over callback fires"
+      - given: "state is Airborne and 120ms passes with no platform contact after leaving a platform"
+        should: "CoyoteWindow state is active and a tap still triggers a jump"
+      # game-state-signals
+      - given: "game initializes"
+        should: "heightReached signal reads 0, elapsedTime reads 0, currentSeed reads levelNumber × 99991"
+      - given: "camera has scrolled N units"
+        should: "heightReached signal equals N (camera scroll drives height)"
+      # asset-manifest-scene-perf
+      - given: "asset manifest is loaded"
+        should: "manifest contains exactly one bundle named 'scene-perf' with prefix 'scene-'"
+      # physics-system
+      - given: "runner is airborne with downward velocity -19 units/s"
+        should: "velocity is clamped to terminal velocity -20 units/s, not below"
+      - given: "runner drifts to the right edge of the viewport (x > viewportRight)"
+        should: "runner.x wraps to 0 (horizontal wrap applied)"
+      # runner-entity
+      - given: "jump fires"
+        should: "runner sprite plays stretch animation (scaleY > 1) within 16ms of tap"
+      # camera-system
+      - given: "game is in Idle or Airborne state"
+        should: "camera Y offset increments by cameraSpeed each frame (scrolling upward)"
+      - given: "state is Lost"
+        should: "camera stops scrolling (freeze on end state)"
+      # game-controller-gpu (partial)
+      - given: "GameController is initialized"
+        should: "Pixi Application mounts on the container, gameMode is 'pixi', canvas fills container"
+      - given: "player taps anywhere on the canvas"
+        should: "tap event routes to board state machine (Idle → Airborne transition visible)"
+      # core-interaction CoS exit criterion: invalid gesture produces visible feedback
+      - given: "player taps while state is Won or Lost"
+        should: "tap is silently ignored (no state change, no crash) — input blocked in terminal states"
+      # animated-dynamics CoS: no instant state changes
+      - given: "runner jumps"
+        should: "runner visually stretches on launch and squashes on landing within 1 frame — no teleport"
+      # canvas CoS: pieces ≥ 48×48 px
+      - given: "runner is rendered on 390px viewport"
+        should: "runner rectangle visual area is ≥ 48×48 px (1×2 game units maps to ≥ 48px wide, ≥ 96px tall)"
+
+    test_loci:
+      - describe: "velocity-rush: board-state-machine"
+        file: "tests/unit/velocity-rush/board-state-machine.test.ts"
+        cases:
+          - "initializes to Idle state"
+          - "Idle → Airborne on tap"
+          - "Airborne → Lost when runner falls below viewport"
+          - "CoyoteWindow active 120ms after leaving platform edge"
+
+      - describe: "velocity-rush: physics-system"
+        file: "tests/unit/velocity-rush/physics-system.test.ts"
+        cases:
+          - "jump impulse sets vertical velocity to +14 units/s"
+          - "gravity applies -28 units/s² per frame when airborne"
+          - "terminal velocity clamps downward at -20 units/s"
+          - "horizontal wrap: runner.x > viewportRight wraps to 0"
+
+      - describe: "velocity-rush: game-state-signals"
+        file: "tests/unit/velocity-rush/game-state-signals.test.ts"
+        cases:
+          - "initial heightReached is 0"
+          - "currentSeed equals levelNumber × 99991"
+          - "heightReached tracks camera scroll distance"
+
+      - describe: "velocity-rush: asset-manifest"
+        file: "tests/unit/velocity-rush/asset-manifest.test.ts"
+        cases:
+          - "manifest contains scene-perf bundle"
+          - "scene-perf bundle name matches [a-z][a-z0-9-]* pattern"
+
+      - describe: "velocity-rush: runner-entity"
+        file: "tests/unit/velocity-rush/runner-entity.test.ts"
+        cases:
+          - "runner starts horizontal drift on init (seeded, no Math.random)"
+          - "runner stretch animation fires on jump within 16ms"
+
+    files:
+      state:
+        - src/game/velocity-rush/state/BoardPlugin.ts
+        - src/game/state.ts
+      integration:
+        - src/game/velocity-rush/screens/gameController.ts
+        - src/game/velocity-rush/systems/PhysicsSystem.ts
+        - src/game/velocity-rush/systems/CameraSystem.ts
+        - src/game/velocity-rush/entities/Runner.ts
+        - src/game/velocity-rush/renderers/RunnerRenderer.ts
+        - src/game/asset-manifest.ts
+    how:
+      - >
+        Create ECS-less state module in src/game/velocity-rush/state/BoardPlugin.ts:
+        export PhysicsState (position, velocity, state: Idle|Airborne|CoyoteWindow|Won|Lost)
+        and transition functions. Use seeded PRNG (mulberry32) in src/game/velocity-rush/generation/rng.ts
+        for horizontal drift. No Math.random() anywhere in game code.
+      - >
+        Build PhysicsSystem.ts as a pure-function tick(state, dt, input) → nextState.
+        Apply gravity (-28 u/s²), jump impulse (+14 u/s), terminal velocity clamp (-20 u/s),
+        coyote window timer (120ms), horizontal wrap. Returns animation events alongside new state.
+      - >
+        Build RunnerRenderer.ts: dark charcoal rectangle (0x2D2D2D) 1×2 game units.
+        GSAP stretch on jump (scaleY 1.3, 80ms), squash on land (scaleY 0.7, 60ms, then settle).
+        CameraSystem.ts: upward scroll at cameraSpeed; freeze when state is Won|Lost.
+        Wire all into gameController.ts (Pixi Application, stage layout, pointertap input).
+    definition_of_done:
+      - "acceptance[] tests go red then green (all 15 acceptance rows have passing tests)"
+      - "integration call site exists at files.integration (gameController.ts mounts Pixi, routes tap)"
+      - "every file in files.integration is exercised by at least one acceptance test"
+      - "CoS sub-walk clean for core-interaction, animated-dynamics, canvas"
+      - "full-screen tap target ≥ 44 px (entire canvas is the tap zone, trivially satisfied)"
+      - "runner visual area ≥ 48×48 px at 390px viewport width"
+      - "no Math.random() calls in any src/game/velocity-rush/ file"
+      - "gameMode returns 'pixi' (not 'dom')"
+      - "bun run build passes; bun run test passes within 3 fix cycles"
+    risk: HIGH
+    risk_reason: >
+      Central integration point — replaces DOM stub with Pixi Application + physics + input.
+      Touches mygame-contract, viewport layout, Pixi lifecycle, and ECS-less state all at once.
+      If Pixi init fails or physics loop has off-by-one errors, all downstream features break.
+      Rollback: keep existing DOM stub in git history; Pixi mode is behind gameMode flag.
+
+  # ===========================================================================
+  # BATCH 2 — P0 — Platforms + Full Level Loop
+  # "Player can land on platforms, reach the exit to win, or fall to lose"
+  # ===========================================================================
+
+  - id: 2
+    name: "Platforms + Procedural Level + Win/Loss Sequences"
+    priority: P0
+    player_visible: >
+      Player sees a generated level: grey platforms at varying heights. Runner can land on them.
+      Moving platforms carry the runner. Crumbling platforms shake before disappearing.
+      Bright accent-colored exit platform at the top — reach it to win.
+      Win: exit pulse + victory bounce → Level Complete.
+      Loss: runner falls off screen → Try Again.
+    features:
+      - platform-static
+      - platform-moving
+      - platform-crumbling
+      - platform-exit
+      - procedural-level-gen
+      - win-sequence
+      - loss-sequence
+    cos_covered: [core-interaction, animated-dynamics, canvas]
+    ux_zones:
+      thumb_zone: [center, full-screen-tap]
+      touch_targets: [full-screen-tap-target]
+      feedback_surfaces: [canvas, platform-sprite, runner-sprite]
+    acceptance:
+      # platform-static
+      - given: "runner is airborne and descends onto a static platform top surface"
+        should: "vertical velocity resets to 0, state transitions to Idle (landed)"
+      - given: "runner approaches a platform from below"
+        should: "runner passes through (one-way collision) and vertical velocity resets to 0 (underside hit)"
+      - given: "first platform is generated"
+        should: "first platform is always width 4 units, centered at x = viewportWidth/2, y = 2 units from bottom"
+      # platform-moving
+      - given: "runner is grounded on a moving platform"
+        should: "runner.x offset matches platform.delta each frame (carry applied)"
+      - given: "a moving platform oscillates and pushes runner to viewport edge"
+        should: "horizontal wrap applies to runner (same wrap as physics system)"
+      - given: "level number is < 4"
+        should: "no moving platforms generated (movingRatio = 0)"
+      # platform-crumbling
+      - given: "runner first contacts a crumbling platform"
+        should: "0.4s crumble timer starts; 0.3s shake animation plays before platform disappears"
+      - given: "two consecutive platforms are both crumbling"
+        should: "solvability checker rejects layout (CONSECUTIVE_CRUMBLING error)"
+      - given: "level number is < 7"
+        should: "no crumbling platforms generated (crumblingRatio = 0)"
+      # platform-exit
+      - given: "runner is grounded on exit platform for >= 300ms"
+        should: "Won state is triggered (win sequence fires)"
+      - given: "exit platform is rendered"
+        should: "platform uses accent color derived from level seed (no Math.random()) and shows upward arrow icon (emoji)"
+      # procedural-level-gen
+      - given: "same level seed is used twice"
+        should: "generated platform layout is identical on both runs (deterministic)"
+      - given: "solvability check fails 10 consecutive times"
+        should: "safe-mode fallback generates static-only level that is always solvable"
+      - given: "level generation is timed"
+        should: "generation completes in < 16ms (perf constraint)"
+      # win-sequence
+      - given: "runner triggers Won state on exit platform"
+        should: "camera freezes, exit platform pulses (400ms GSAP), runner victory bounce (300ms), then game transitions after 700ms total"
+      # loss-sequence
+      - given: "runner falls below viewport (Lost state)"
+        should: "camera freezes, 400ms pause, 200ms fade-out, then game transitions to results"
+      # animated-dynamics: no consecutive crumbling (design smell)
+      - given: "crumbling platform disappears"
+        should: "runner is either in air or on another platform — never teleported (state continuous)"
+      # canvas CoS: visual distinctiveness
+      - given: "static and moving platforms are both on screen"
+        should: "static platforms are mid-grey (0x888888), moving platforms are lighter grey (0xAAAAAA) — visually distinct"
+      - given: "exit platform is on screen"
+        should: "exit platform accent color is visually distinct from grey platforms (bright, saturated)"
+      # core-interaction: invalid tap in Won/Lost states
+      - given: "state is Won (win sequence playing)"
+        should: "tap input is ignored; sequence completes uninterrupted"
+
+    test_loci:
+      - describe: "velocity-rush: platform-collision"
+        file: "tests/unit/velocity-rush/platform-collision.test.ts"
+        cases:
+          - "landing on top of static platform: velocity resets to 0"
+          - "underside hit: runner passes through, velocity resets"
+          - "first platform always at expected position and width"
+
+      - describe: "velocity-rush: platform-types"
+        file: "tests/unit/velocity-rush/platform-types.test.ts"
+        cases:
+          - "moving platform carry: runner.x offset matches platform.delta"
+          - "moving platform not generated before level 4"
+          - "crumbling platform not generated before level 7"
+          - "no consecutive crumbling platforms in generated layout"
+
+      - describe: "velocity-rush: level-generator"
+        file: "tests/unit/velocity-rush/level-generator.test.ts"
+        cases:
+          - "same seed produces identical layout (deterministic)"
+          - "safe-mode fallback triggers after 10 failed solvability checks"
+          - "generation completes in < 16ms for level 1 through level 10"
+          - "solvability checker rejects CONSECUTIVE_CRUMBLING layout"
+          - "solvability checker rejects GAP_TOO_WIDE layout"
+
+      - describe: "velocity-rush: win-loss-sequences"
+        file: "tests/unit/velocity-rush/win-loss-sequences.test.ts"
+        cases:
+          - "win sequence: Won state set, camera frozen, transition fires after 700ms"
+          - "loss sequence: Lost state set, camera frozen, transition fires after 600ms"
+          - "tap in Won state does not change state"
+
+    files:
+      state:
+        - src/game/velocity-rush/entities/Platform.ts
+        - src/game/velocity-rush/generation/LevelGenerator.ts
+        - src/game/velocity-rush/generation/SolvabilityChecker.ts
+        - src/game/velocity-rush/generation/rng.ts
+        - src/game/velocity-rush/sequences/WinSequence.ts
+        - src/game/velocity-rush/sequences/LossSequence.ts
+      integration:
+        - src/game/velocity-rush/screens/gameController.ts
+        - src/game/velocity-rush/renderers/PlatformRenderer.ts
+      test:
+        - tests/unit/velocity-rush/platform-collision.test.ts
+        - tests/unit/velocity-rush/platform-types.test.ts
+        - tests/unit/velocity-rush/level-generator.test.ts
+        - tests/unit/velocity-rush/win-loss-sequences.test.ts
+    how:
+      - >
+        Platform.ts: shared entity type with variant field ('static'|'moving'|'crumbling'|'exit').
+        Collision logic pure functions: landedOnTop(runner, platform) → bool,
+        hitsUnderside(runner, platform) → bool. Moving platform: delta computed per frame
+        from oscillation (seeded PRNG, 1–2 u/s range).
+        Crumbling platform: timerMs state field, crumble resolves in PhysicsSystem tick.
+        Exit platform: accentColor derived as HSL(seed % 360, 80%, 55%) for bright saturation.
+      - >
+        LevelGenerator.ts: seed = levelNumber × 99991; mulberry32 PRNG from rng.ts.
+        SolvabilityChecker.ts: simulate runner path from bottom to top, check GAP_TOO_WIDE,
+        RISE_TOO_HIGH, CONSECUTIVE_CRUMBLING, NO_EXIT. Up to 10 retries (seed+1 each).
+        Safe-mode fallback: static platforms only, fixed 3-unit width, 2-unit gap, 2-unit rise.
+        Difficulty params scale with levelNumber (movingRatio > 0 at level 4, crumblingRatio > 0 at level 7).
+      - >
+        WinSequence.ts and LossSequence.ts: return Promise, use GSAP delayedCall (not setTimeout).
+        PlatformRenderer.ts: emoji arrow "↑" on exit platform (design smells fallback priority: emoji > shape).
+        Wire into gameController.ts: on level load, call LevelGenerator, build platform entities,
+        create PlatformRenderer instances. On win: call WinSequence then goto('results').
+        On loss: call LossSequence then goto('results').
+    definition_of_done:
+      - "acceptance[] tests go red then green (all 17 acceptance rows have passing tests)"
+      - "integration call site exists at files.integration (gameController.ts loads level and wires platforms)"
+      - "every file in files.integration is exercised by at least one acceptance test"
+      - "CoS sub-walk clean for core-interaction, animated-dynamics, canvas"
+      - "no Math.random() in any generation or physics file"
+      - "level generation < 16ms verified by timing test in level-generator.test.ts"
+      - "determinism test: seed 99991 produces same layout on two calls"
+      - "visual fallback: exit platform arrow is emoji '↑' not unlabeled Graphics API shape"
+      - "bun run build passes; bun run test passes within 3 fix cycles"
+    risk: HIGH
+    risk_reason: >
+      Physics-level-gen coupling: solvability checker simulates physics. If PhysicsSystem
+      constants drift from spec, checker approves unsolvable levels. Mitigation: level-generator
+      test imports the same physics constants as runtime.
+      Procedural gen perf: < 16ms constraint. Mitigation: timing assertion in test suite catches regressions.
+
+  # ===========================================================================
+  # BATCH 3 — P1 — Screens + HUD + Performance Score
+  # "Player sees title, HUD readout, results with perf score"
+  # ===========================================================================
+
+  - id: 3
+    name: "Screens + HUD Strip + Performance Score"
+    priority: P1
+    player_visible: >
+      Loading screen: white background + centered progress bar (no branding logo during load).
+      Start screen: 'Velocity Rush' title, current level number, 'perf mode' badge, large Play button.
+      HUD strip: 80pt top band showing height meter (units climbed) + elapsed time (mm:ss).
+      Results — Level Complete: height / time / perf score + 'Play Again' (same seed) + 'Next Level' (seed+1).
+      Results — Try Again: height reached + single large 'Try Again' CTA.
+      No 'Game Over' language on failure branch.
+    features:
+      - loading-screen
+      - start-screen
+      - results-screen
+      - screen-shell-wiring
+      - hud-strip
+    cos_covered: [canvas, scoring]
+    ux_zones:
+      thumb_zone: [center-bottom, center]
+      touch_targets: [play-button, play-again-button, next-level-button, try-again-button]
+      feedback_surfaces: [progress-bar, hud, metrics-display, heading]
+    acceptance:
+      # loading-screen
+      - given: "loading screen mounts"
+        should: "background is white (#ffffff), WolfGames Logo is NOT shown during loading (stripped)"
+      - given: "assets are loading"
+        should: "centered horizontal progress bar advances from 0% to 100% as bundles complete"
+      # start-screen
+      - given: "start screen mounts"
+        should: "title reads 'Velocity Rush' and level indicator shows current level number from gameState.level()"
+      - given: "start screen mounts"
+        should: "Play button is ≥ 44×44 px hit area, positioned in center-bottom thumb zone"
+      - given: "Play button is tapped"
+        should: "initGpu() is called, scene-perf bundle loads, then game screen navigates within 100ms of button press"
+      - given: "start screen mounts"
+        should: "'perf mode' badge visible near title (small label, not primary CTA)"
+      # results-screen (Level Complete branch)
+      - given: "game transitions to results with win=true"
+        should: "heading reads 'Level Complete' (not 'Game Over')"
+      - given: "results screen mounts with win=true"
+        should: "height, elapsed time, and perf score (3 multiplicative dimensions) all displayed"
+      - given: "'Play Again' button tapped on Level Complete screen"
+        should: "level resets with same seed (currentSeed unchanged) and game screen reopens"
+      - given: "'Next Level' button tapped on Level Complete screen"
+        should: "levelNumber increments by 1, seed recalculates as new levelNumber × 99991, game screen opens"
+      # results-screen (Try Again branch)
+      - given: "game transitions to results with win=false"
+        should: "heading reads 'Try Again' (not 'Game Over' — no Game Over language)"
+      - given: "results screen mounts with win=false"
+        should: "height-reached metric displayed; single large 'Try Again' CTA in thumb zone"
+      # hud-strip
+      - given: "game is running"
+        should: "HUD strip occupies exactly 80pt at top of canvas (no DOM — pure GPU Pixi text/graphics)"
+      - given: "camera has scrolled N units"
+        should: "height meter reads N (integer) in HUD strip, updating every frame"
+      - given: "60 seconds have elapsed"
+        should: "elapsed time reads '01:00' (mm:ss format) in HUD strip"
+      - given: "HUD strip is 80pt and reserved_bottom is 64pt"
+        should: "play area occupies 700pt (844 - 80 - 64 = 700); no HUD/canvas overlap"
+      # scoring CoS: perf score formula has ≥ 2 multiplicative dimensions
+      - given: "player A reaches height 100 in 10s with avg frame time 16ms; player B reaches height 100 in 20s with 16ms avg"
+        should: "player A perf score is exactly 2× player B score (speed dimension is multiplicative)"
+      - given: "player reaches height 100 in 10s; run A has avgFrameTime 16.67ms, run B has 33.33ms"
+        should: "run A perf score is exactly 2× run B score (frame-efficiency dimension is multiplicative)"
+      # screen layout safe areas
+      - given: "start screen renders on 390×844 viewport"
+        should: "no interactive content within top 50pt or bottom 34pt safe-area insets"
+
+    test_loci:
+      - describe: "velocity-rush: perf-score-formula"
+        file: "tests/unit/velocity-rush/perf-score.test.ts"
+        cases:
+          - "perf score: player A 2× faster than B yields 2× score"
+          - "perf score: frame efficiency 2× better yields 2× score"
+          - "perf score: all three dimensions multiply (height × speed × frame)"
+
+      - describe: "velocity-rush: results-screen-branches"
+        file: "tests/unit/velocity-rush/results-screen.test.ts"
+        cases:
+          - "Level Complete branch: heading is 'Level Complete' not 'Game Over'"
+          - "Try Again branch: heading is 'Try Again' not 'Game Over'"
+          - "Play Again uses same seed"
+          - "Next Level increments levelNumber and recalculates seed"
+
+      - describe: "velocity-rush: hud-strip"
+        file: "tests/unit/velocity-rush/hud-strip.test.ts"
+        cases:
+          - "height meter matches camera scroll distance"
+          - "elapsed time formats as mm:ss"
+          - "HUD height is 80pt — play area starts at y=80"
+
+      - describe: "velocity-rush: start-screen"
+        file: "tests/unit/velocity-rush/start-screen.test.ts"
+        cases:
+          - "title text is 'Velocity Rush'"
+          - "Play button min size 44×44"
+          - "Play button calls initGpu and loads scene-perf bundle"
+
+    files:
+      state:
+        - src/game/state.ts
+        - src/game/velocity-rush/scoring/PerfScore.ts
+      integration:
+        - src/game/screens/LoadingScreen.tsx
+        - src/game/screens/StartScreen.tsx
+        - src/game/screens/ResultsScreen.tsx
+        - src/game/velocity-rush/renderers/HudRenderer.ts
+        - src/game/velocity-rush/screens/startView.ts
+      test:
+        - tests/unit/velocity-rush/perf-score.test.ts
+        - tests/unit/velocity-rush/results-screen.test.ts
+        - tests/unit/velocity-rush/hud-strip.test.ts
+        - tests/unit/velocity-rush/start-screen.test.ts
+    how:
+      - >
+        Extend src/game/state.ts: add signals heightReached, elapsedTime, avgFrameTime,
+        currentSeed (= levelNumber × 99991), winState (bool). Add perfScore computed signal.
+        PerfScore.ts: pure function computePerfScore(height, elapsedMs, avgFrameMs) → number.
+        Formula: Math.round(height * (1000 / elapsedMs) * (16.67 / avgFrameMs)).
+        Clamp to minimum 1 to avoid 0-score edge case.
+      - >
+        LoadingScreen.tsx: change background to white (#ffffff). Remove Logo from loading phase
+        (Logo render stays for post-load only if themeLoaded && !isLoading guard). Progress bar:
+        center the existing bar element, white background, dark bar fill. No branding during load.
+        StartScreen.tsx: replace 'Start Screen' title with 'Velocity Rush', add level indicator
+        reading gameState.level(), add small 'PERF MODE' badge (styled label above title).
+        Play button: replace DOM inline styles with Tailwind classes, ensure ≥ 44×44 hit area.
+        startView.ts: remove loadAudio() call and catch block entirely (guardrail #15 — audio omitted).
+      - >
+        ResultsScreen.tsx: read winState from gameState. Level Complete branch: heading 'Level Complete',
+        display heightReached + elapsedTime + perfScore metrics, two buttons ('Play Again' same seed,
+        'Next Level' seed+1 via gameState.incrementLevel()). Try Again branch: heading 'Try Again',
+        display heightReached only, one large button. No 'Game Over' text anywhere.
+        HudRenderer.ts: GPU-only (no DOM), 80pt band at top, two Pixi Text nodes (height meter, timer).
+        Wire into gameController.ts: HUD receives camera scroll updates every frame.
+    definition_of_done:
+      - "acceptance[] tests go red then green (all 19 acceptance rows have passing tests)"
+      - "integration call site exists at files.integration (gameController.ts calls HudRenderer.update)"
+      - "every file in files.integration is exercised by at least one acceptance test"
+      - "CoS sub-walk clean for canvas, scoring"
+      - "play-button hit area ≥ 44×44 px verified in start-screen.test.ts"
+      - "HUD strip is GPU-only (no document.createElement or CSS in HudRenderer.ts)"
+      - "reserved_top_px=80 applied: screen root of game canvas consumes 80pt top padding"
+      - "reserved_bottom_px=64 applied: play area does not extend into bottom 64pt zone"
+      - "LoadingScreen background is white; Logo absent during loading phase"
+      - "no 'Game Over' text anywhere in ResultsScreen.tsx"
+      - "loadAudio() call removed from startView.ts (not stubbed, deleted)"
+      - "perf score formula uses 3 multiplicative dimensions (height × speed × frame-efficiency)"
+      - "bun run build passes; bun run test passes within 3 fix cycles"
+    risk: MEDIUM
+    risk_reason: >
+      ResultsScreen dual-branch (win vs loss) requires reading winState from game state before
+      the results screen component mounts — timing sensitive. Mitigation: ensure win/loss sequences
+      write winState BEFORE goto('results') fires.
+      HUD must not overlap canvas play area — viewport budget must be wired into HudRenderer.

@@ -5,6 +5,7 @@ import { PauseOverlay, useTuning, type ScaffoldTuning } from '~/core';
 import { Logo } from '~/core/ui/Logo';
 import { useAudio } from '~/core/systems/audio';
 import { useGameTracking } from '~/game/setup/tracking';
+import { useScreen, type ScreenId } from '~/core/systems/screens';
 
 import type { GameTuning } from '~/game/tuning';
 import { useGameData } from '~/game/screens/useGameData';
@@ -15,6 +16,7 @@ import { setupGame } from '~/game/mygame/screens/gameController';
 
 export default function GameScreen() {
   const { coordinator } = useAssets();
+  const { goto } = useScreen();
   const tuning = useTuning<ScaffoldTuning, GameTuning>();
   const audio = useAudio();
   const gameData = useGameData();
@@ -28,6 +30,7 @@ export default function GameScreen() {
     audio,
     gameData,
     analytics,
+    goto: (screen) => { void goto(screen as ScreenId); },
   });
 
   onMount(() => {

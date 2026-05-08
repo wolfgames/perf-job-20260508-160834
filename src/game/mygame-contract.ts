@@ -37,6 +37,8 @@ export interface GameControllerDeps {
   audio: unknown;
   gameData: unknown;
   analytics: unknown;
+  /** Navigate to a named screen. Required for win/loss transitions to results. */
+  goto: (screen: string) => void;
 }
 
 export interface GameController {

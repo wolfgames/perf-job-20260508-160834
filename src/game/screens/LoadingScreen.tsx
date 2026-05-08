@@ -18,7 +18,7 @@ export function LoadingScreen() {
 
   const m = manifest();
   const bundlesByPrefix = (prefix: string) =>
-    m.bundles.filter((b) => b.name.startsWith(prefix)).map((b) => b.name);
+    (m.bundles as Array<{ name: string }>).filter((b) => b.name.startsWith(prefix)).map((b) => b.name);
 
   const bootBundles = bundlesByPrefix('boot-');
   const themeBundles = bundlesByPrefix('theme-');
