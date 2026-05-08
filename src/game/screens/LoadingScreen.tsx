@@ -1,12 +1,14 @@
 import { onMount, createMemo, Show } from 'solid-js';
-import { Spinner } from '@wolfgames/components/solid';
 import { useScreen } from '~/core/systems/screens';
 import { useAssets, useLoadingState } from '~/core/systems/assets';
 import { useManifest } from '@wolfgames/components/solid';
 import { useTuning, type ScaffoldTuning } from '~/core';
-import { Logo } from '~/core/ui/Logo';
 import type { GameTuning } from '~/game/tuning';
 
+/**
+ * Loading screen — white background, centered progress bar, no branding.
+ * WolfGames logo is NOT shown during loading (only after theme loaded and out of loading phase).
+ */
 export function LoadingScreen() {
   const { goto } = useScreen();
   const assets = useAssets();
@@ -20,8 +22,6 @@ export function LoadingScreen() {
 
   const bootBundles = bundlesByPrefix('boot-');
   const themeBundles = bundlesByPrefix('theme-');
-  const coreBundles = bundlesByPrefix('core-');
-  const audioBundles = bundlesByPrefix('audio-');
 
   const shouldSkipStartScreen = (): boolean => {
     if (tuning.game.devMode?.skipStartScreen) return true;
@@ -30,6 +30,9 @@ export function LoadingScreen() {
   };
 
   const skipToGame = shouldSkipStartScreen();
+
+  const coreBundles = bundlesByPrefix('core-');
+  const audioBundles = bundlesByPrefix('audio-');
 
   const targetBundles = skipToGame
     ? [...bootBundles, ...themeBundles, ...coreBundles, ...audioBundles]
@@ -49,11 +52,6 @@ export function LoadingScreen() {
     return (sum / targetBundles.length) * 100;
   });
 
-  const themeLoaded = createMemo(() => {
-    const s = loadingState();
-    return themeBundles.every((b) => s.loaded.includes(b));
-  });
-
   const failedBundles = createMemo(() => {
     const s = loadingState();
     return targetBundles.filter((name) => name in s.errors);
@@ -71,15 +69,9 @@ export function LoadingScreen() {
       if (skipToGame) {
         await assets.loadBoot();
         await assets.loadTheme();
-
         assets.unlockAudio();
         await assets.initGpu();
         await assets.loadCore();
-        try {
-          await assets.loadAudio();
-        } catch (err) {
-          console.warn('Audio loading failed:', err);
-        }
         await new Promise((r) => setTimeout(r, 300));
         await goto('game');
       } else {
@@ -89,12 +81,13 @@ export function LoadingScreen() {
         await goto('start');
       }
     } catch (err) {
-      console.error('Failed to load initial assets:', err);
+      console.error('[velocity-rush] Failed to load initial assets:', err);
     }
   });
 
   return (
-    <div class="fixed inset-0 flex flex-col items-center justify-center bg-[#BCE083]">
+    // White background — no branding during loading (guardrail #15)
+    <div class="fixed inset-0 flex flex-col items-center justify-center bg-white">
       <Show
         when={failedBundles().length === 0}
         fallback={
@@ -105,27 +98,21 @@ export function LoadingScreen() {
             </p>
             <button
               onClick={retryFailed}
-              class="px-6 py-3 bg-white text-gray-800 rounded-xl font-medium shadow-md hover:shadow-lg active:scale-95 transition-all"
+              class="px-6 py-3 bg-gray-800 text-white rounded-xl font-medium shadow-md hover:shadow-lg active:scale-95 transition-all"
             >
               Retry
             </button>
           </div>
         }
       >
-        <Spinner size="lg" class="w-24 h-24 text-gray-800" />
-        <div class="mt-8 w-64 h-2 bg-white/30 rounded-full overflow-hidden">
+        {/* Centered progress bar — dark fill on white background */}
+        <div class="w-64 h-2 bg-gray-200 rounded-full overflow-hidden">
           <div
             class="h-full bg-gray-800 rounded-full transition-all duration-300"
             style={{ width: `${progress()}%` }}
           />
         </div>
       </Show>
-
-      {themeLoaded() && (
-        <div class="absolute bottom-8">
-          <Logo />
-        </div>
-      )}
     </div>
   );
 }

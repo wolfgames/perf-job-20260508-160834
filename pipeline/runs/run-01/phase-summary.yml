@@ -1,0 +1,194 @@
+pass_gate:
+  status: complete
+  pass: core
+  previous_pass: null
+  previous_run: null
+  previous_pass_stable: true
+  gate_decision: skipped_core
+  notes: "core is the first gated pass — no N-1 check required; gate passed"
+  carry_forward: {}
+
+prime:
+  status: complete
+  project: "Velocity Rush"
+  stack: "pixi + solidjs + gsap + bun (vite, vitest)"
+  existing_features: 7
+  dom_overlays:
+    - "Logo (bottom-8, ~32px, GameScreen.tsx)"
+    - "PauseOverlay (system overlay, GameScreen.tsx)"
+  carry_forward:
+    target_device: "iPhone reference portrait 390x844 (dvh)"
+    game_greenfield: true
+    reserved_bottom_px: 64
+    reserved_top_px: 0
+    game_controller_stub: true
+    stack_gaps: []
+    host_rules_missing: false
+
+analyze:
+  status: complete
+  features:
+    exists: 0
+    partial: 2
+    new: 13
+    conflict: 0
+    content_gap: 5
+  conflict_breakdown:
+    reuse: 0
+    adapt: 0
+    replace: 0
+  high_risk: [game-controller-gpu, physics-system, procedural-level-gen, camera-system]
+  medium_risk: [start-screen, results-screen, runner-entity, platform-static, platform-moving, platform-crumbling, platform-exit, board-state-machine, hud-strip, win-sequence]
+  open_questions: 2
+  carry_forward:
+    critical_integration_point: game-controller-gpu
+    transformative_hint: false
+    hud_reserved_top_pt: 80
+    scoring_cos_unresolved: true
+    audio_scope_unresolved: true
+    results_screen_dual_branch: true
+    no_gameover_language: true
+
+plan:
+  status: complete
+  gdd_type: "additive"
+  batches: 3
+  features: 20
+  new_files: 28
+  modified_files: 5
+  viewport_budget:
+    hud_top: 80
+    play_area: 700
+    reserved_bottom: 64
+    viewport_total: 844
+    viewport_width: 390
+  resolved_questions: 2
+  out_of_pass_cos: []
+  warnings:
+    - "collision-resolved:hud-reserved-top — skill-wins (prime.carry_forward.reserved_top_px=0 default); gdd-ask=80pt honored as new feature hud-strip (not dropped — 80pt is a game design requirement for the HUD band, not a style preference) (default)"
+    - "collision-resolved:results-screen-heading — skill-wins (scaffold ResultsScreen.tsx heading 'Game Over'); gdd-ask='Try Again?' dropped (default); NOTE: plan batch 3 explicitly writes 'Try Again' copy as new feature content — this is not a GDD override of a rule, it is new content replacing scaffold placeholder copy (guardrail #15 applies: scaffold placeholder must be replaced with real copy)"
+    - "collision-resolved:scoring-cos — gdd=pass/fail only vs cos=scoring CoS requires multiplicative dimensions — resolved by deriving perf-score formula: heightReached × (1000/elapsedMs) × (16.67/avgFrameMs); satisfies scoring CoS base (3 multiplicative dimensions); CoS gated at core pass is covered in batch 3 (default)"
+    - "self-audit: src/core/ read-only — PASS (no batches[].files.* entry under src/core/)"
+    - "self-audit: no-stubs-no-placeholders — PASS (resolved_questions_scalars contains no placeholder/TBD/stub values)"
+    - "self-audit: slug substitution complete — PASS (no <game-root> or mygame literals in batches[].files.* or test_loci[].file)"
+    - "self-audit: collision-resolution coverage — PASS (all 3 collision:* entries have matching collision-resolved:* entries)"
+    - "self-audit: integration-file coverage — PASS (all files.integration entries exercised by at least one acceptance[].should)"
+    - "runcontext_ownership: viewport-budget key was empty {} before plan ran — written clean by 30-plan as sole owner"
+  resolved_questions_scalars:
+    q-scoring-cos: "perf-score = heightReached × (1000/elapsedMs) × (16.67/avgFrameMs); 3 multiplicative dimensions; computed at level end"
+    q-audio-scope: "omitted — no audio content in GDD; loadAudio() stub removed (guardrail #15); unlockAudio() retained for mobile compliance"
+  carry_forward:
+    game_slug: "velocity-rush"
+    hook_batch: 1
+    priority_ordering_applied: true
+    cos_deferred_to_batch: {}
+    viewport_budget_derived_from: "greenfield_defaults"
+    critical_integration_point: "game-controller-gpu"
+
+implement:
+  status: complete
+  batches_completed: "3/3"
+  files_modified: 6
+  files_created: 22
+  tests_added: 43
+  features_audited: 20
+  issues_found: 6
+  fixes_applied: 6
+  deferred: []
+  blockers: []
+  warnings:
+    - "copy-mismatch:start-screen-badge — gdd='perf mode' vs code='PERF MODE' (src/game/velocity-rush/screens/startView.ts:35)"
+  ux_gaps: []
+  cos_gaps: []
+  cos_findings:
+    - batch_id: 1
+      cos_id: core-interaction
+      lens: affordance
+      status: pass
+      note: "full-screen tap on canvas; input blocked in Won/Lost; CoyoteWindow 120ms grace"
+    - batch_id: 1
+      cos_id: animated-dynamics
+      lens: feedback
+      status: pass
+      note: "jump stretch (scaleY 1.3, 80ms) + landing squash (GSAP); no instant state changes"
+    - batch_id: 1
+      cos_id: canvas
+      lens: discoverability
+      status: pass
+      note: "runner 48×96px at 390px viewport — well above 48×48 minimum"
+    - batch_id: 2
+      cos_id: core-interaction
+      lens: feedback
+      status: pass
+      note: "tap in Won state ignored; platform collision one-way; exit contact 300ms guard"
+    - batch_id: 2
+      cos_id: animated-dynamics
+      lens: feedback
+      status: pass
+      note: "crumble shake 300ms before disappear; win pulse 400ms + bounce 300ms; loss fade 200ms"
+    - batch_id: 2
+      cos_id: canvas
+      lens: discoverability
+      status: pass
+      note: "static grey 0x888888, moving lighter 0xaaaaaa, exit accent color + arrow emoji — visually distinct"
+    - batch_id: 3
+      cos_id: canvas
+      lens: feedback
+      status: pass
+      note: "HUD 80pt GPU strip; play area 700pt; no HUD/canvas overlap; white loading screen"
+    - batch_id: 3
+      cos_id: scoring
+      lens: feedback
+      status: pass
+      note: "perfScore = heightReached × (1000/elapsedMs) × (16.67/avgFrameMs); 3 multiplicative dimensions; 2x faster → 2x score"
+  carry_forward:
+    actual_hook_batch: 1
+    viewport_budget_changed: false
+    deferred_cos: []
+    batch_boundary_violations: []
+    unfixed_ux_issues: []
+    asset_fallbacks_applied:
+      - "runner-sprites:graphics-primitives"
+      - "platform-sprites:graphics-primitives"
+    priority_reorder_applied: false
+    dod_failures: []
+
+integrate:
+  status: pending
+  viewport_rederived: false
+  orphans_wired: []
+  orphans_deleted: []
+  fallbacks_unified: []
+  unreachable: []
+  warnings: []
+  carry_forward: {}
+
+player_flow:
+  status: pending
+  journey_walked: false
+  transitions_checked: []
+  fun_test_result: ""
+  issues_found: 0
+  fixes_applied: 0
+  carry_forward: {}
+
+verify:
+  status: pending
+  build: ""
+  tests_passing: 0
+  tests_total: 0
+  fix_cycles: 0
+  playability: ""
+  remaining_issues: []
+  carry_forward: {}
+
+stabilize:
+  status: pending
+  completion_ratio: ""
+  test_count: 0
+  known_issues: []
+  cos_failed: []
+  cos_rationale: []
+  completeness_gaps: []
+  pipeline_status: ""
+  carry_forward: {}
